@@ -84,8 +84,11 @@ if send:
                 source=LANG_CODES[sender_lang], target="en"
             ).translate(user_text)
 
-            prediction = emotion_classifier(translated_text)[0]
-            emotion = prediction["label"]
+            try:
+                prediction = emotion_classifier(translated_text)[0]
+                emotion = prediction["label"]
+            except (IndexError, KeyError, TypeError):
+                emotion = "neutral"
             emoji = EMOJI_MAP.get(emotion, "💬")
             tagged_text = f"[{emotion.upper()} {emoji}] {translated_text}"
 
