@@ -3,13 +3,13 @@ import requests
 
 st.title("📥 CrypTalk Receiver")
 
-API_KEY = "PASTE_YOUR_API_KEY"
+API_KEY = "$2a$10$Sfp9KhzSzJBDPcKJJZYSNeDKxmiuw8xc.Jn7/xMJbKLmFmaGikJVe"
 BIN_ID = "69d68478856a6821891093db"
 
 url = f"https://api.jsonbin.io/v3/b/{BIN_ID}/latest"
 
 headers = {
-    "X-Master-Key": $2a$10$Sfp9KhzSzJBDPcKJJZYSNeDKxmiuw8xc.Jn7/xMJbKLmFmaGikJVe
+    "X-Master-Key": API_KEY
 }
 
 if st.button("Receive Message"):
