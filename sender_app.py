@@ -1,9 +1,9 @@
 import streamlit as st
 import requests
 from deep_translator import GoogleTranslator
-from transformers import pipeline
 import zlib
 import os
+import re
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 API_KEY = "$2a$10$Sfp9KhzSzJBDPcKJJZYSNeDKxmiuw8xc.Jn7/xMJbKLmFmaGikJVe"
@@ -14,9 +14,8 @@ HEADERS = {
     "X-Master-Key": API_KEY
 }
 
-st.set_page_config(page_title="CrypTalk Sender", page_icon="📤", layout="centered")
+st.set_page_config(page_title="CrypTalk Sender", page_icon="📤")
 st.title("📤 CrypTalk Sender")
-st.caption("Translate, encrypt, and send a secure message")
 
 LANG_CODES = {
     "English": "en",
@@ -33,18 +32,97 @@ EMOJI_MAP = {
     "anger": "😠",
     "fear": "😨",
     "surprise": "😲",
+    "sarcasm": "😏",
     "neutral": "😐"
 }
 
-@st.cache_resource
-def load_models():
-    return pipeline(
-        "text-classification",
-        model="j-hartmann/emotion-english-distilroberta-base",
-        top_k=1,
-    )
+# 🔥 SARCASM DETECTION
+def detect_sarcasm(text):
+    text_lower = text.lower()
 
-emotion_classifier = load_models()
+    sarcasm_phrases = [
+        "as if", "yeah right", "sure", "you think so", "wow great",
+        "just perfect", "nice job", "well done", "obviously", "totally"
+    ]
+
+    # repeated letters (sooo, greaaat)
+    if re.search(r"(.)\1{2,}", text_lower):
+        return True
+
+    # excessive punctuation
+    if "!!" in text or "??" in text or "!?" in text:
+        return True
+
+    # sarcastic phrases
+    if any(p in text_lower for p in sarcasm_phrases):
+        return True
+
+    return False
+
+
+# 🔥 IMPROVED EMOTION DETECTION
+def detect_emotion(text):
+    text = text.lower()
+
+    # FIRST: sarcasm check
+    if detect_sarcasm(text):
+        return "sarcasm"
+
+    joy_words = [
+        "happy", "joy", "love", "awesome", "great", "fantastic", "excited",
+        "good", "nice", "wonderful", "best", "glad", "yay", "smile",
+        "delighted", "thrilled", "pleased", "enjoy", "brilliant"
+    ]
+
+    sadness_words = [
+        "sad", "depressed", "unhappy", "cry", "miss", "lonely",
+        "heartbroken", "down", "upset", "tired", "lost", "pain",
+        "hurt", "miserable", "gloomy", "bad", "regret"
+    ]
+
+    anger_words = [
+        "angry", "mad", "hate", "annoyed", "furious",
+        "irritated", "frustrated", "rage", "stupid", "worst",
+        "disgusting", "ridiculous", "nonsense", "trash"
+    ]
+
+    fear_words = [
+        "scared", "afraid", "fear", "worried", "nervous",
+        "help", "help me", "save me", "danger", "run", "running",
+        "escape", "stuck", "trapped", "lost", "panic", "emergency",
+        "something is wrong", "not safe", "underwater", "drowning",
+        "chasing", "hiding", "terrified", "unsafe"
+    ]
+
+    surprise_words = [
+        "wow", "amazing", "unexpected", "shocked",
+        "unbelievable", "suddenly", "what", "seriously",
+        "no way", "really", "omg"
+    ]
+
+    # phrase priority (important)
+    for phrase in fear_words:
+        if phrase in text:
+            return "fear"
+
+    for word in anger_words:
+        if word in text:
+            return "anger"
+
+    for word in sadness_words:
+        if word in text:
+            return "sadness"
+
+    for word in joy_words:
+        if word in text:
+            return "joy"
+
+    for word in surprise_words:
+        if word in text:
+            return "surprise"
+
+    return "neutral"
+
 
 col1, col2 = st.columns(2)
 with col1:
@@ -55,17 +133,12 @@ with col2:
 sender_lang = st.selectbox("Sender Language", list(LANG_CODES.keys()))
 receiver_lang = st.selectbox("Receiver Language", list(LANG_CODES.keys()))
 
-user_text = st.text_area("Enter your message", placeholder="Type your message here…", height=140)
+user_text = st.text_area("Enter your message", height=140)
 
 send = st.button("🔐 Send Secure Message")
 
 def compress(text):
     return zlib.compress(text.encode())
-
-
-def decompress(data):
-    return zlib.decompress(data).decode()
-
 
 def encrypt(data):
     key = AESGCM.generate_key(bit_length=128)
@@ -76,19 +149,18 @@ def encrypt(data):
 
 
 if send:
-    if not sender_name.strip() or not receiver_name.strip() or not user_text.strip():
-        st.warning("Please enter sender, receiver, and a message.")
+    if not sender_name or not receiver_name or not user_text:
+        st.warning("Fill all fields")
     else:
-        with st.spinner("Processing secure message..."):
+        with st.spinner("Processing..."):
+
             translated_text = GoogleTranslator(
-                source=LANG_CODES[sender_lang], target="en"
+                source=LANG_CODES[sender_lang],
+                target="en"
             ).translate(user_text)
 
-            try:
-                prediction = emotion_classifier(translated_text)[0]
-                emotion = prediction["label"]
-            except (IndexError, KeyError, TypeError):
-                emotion = "neutral"
+            emotion = detect_emotion(translated_text)
+
             emoji = EMOJI_MAP.get(emotion, "💬")
             tagged_text = f"[{emotion.upper()} {emoji}] {translated_text}"
 
@@ -109,18 +181,13 @@ if send:
 
             try:
                 response = requests.put(URL, json=payload, headers=HEADERS)
-            except requests.exceptions.RequestException as exc:
-                st.error("❌ Unable to send secure message.")
-                st.write(exc)
+            except Exception as e:
+                st.error(e)
             else:
                 if response.status_code in (200, 201):
-                    st.success("✅ Secure message sent to cloud storage")
-                    st.write("**Stored message details:**")
-                    st.write("Sender:", sender_name)
-                    st.write("Receiver:", receiver_name)
+                    st.success("Message Sent ✅")
                     st.write("Emotion:", emotion.upper(), emoji)
-                    st.write("Message stored as:")
                     st.code(tagged_text)
                 else:
-                    st.error("❌ Failed to send message")
+                    st.error("Failed to send")
                     st.write(response.text)
